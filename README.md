@@ -15,7 +15,14 @@ Nebula is a native terminal multiplexer built with Cipher. It owns PTYs, serves 
 zig build -Dcipher-root=/path/to/Cipher
 zig build test -Dcipher-root=/path/to/Cipher
 zig build test-e2e -Dcipher-root=/path/to/Cipher
+zig build dist -Dcipher-root=/path/to/Cipher -Doptimize=ReleaseSafe
 ```
+
+`zig build dist` installs the actual compiled `nebula` executable at
+`zig-out/bin/nebula`. It is a standalone application binary with the framework
+code compiled in; no separately installed Cipher runtime is needed. A Unix-like
+system with PTYs is required for the engine and CLI. The multiplexer tests do
+not require a display, compositor, or GPU.
 
 The protocol tests cover request encoding and reply parsing. The end-to-end tests start the actual engine and exercise spawn, run/wait, capture, resize, split, list, and close over a real socket.
 
