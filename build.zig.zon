@@ -1,0 +1,14 @@
+.{
+    .name = .nebula,
+    .version = "0.1.0",
+    .fingerprint = 0xe206d7e239b53b93,
+    .minimum_zig_version = "0.17.1",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "tests",
+        "README.md",
+        "LICENSE",
+    },
+}
