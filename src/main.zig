@@ -185,20 +185,37 @@ fn printJson(allocator: std.mem.Allocator, line: []const u8) !void {
 
 fn usage() void {
     const msg =
-        \\rex — cipher-rex multiplexer CLI
-        \\  rex serve [--socket PATH]
-        \\  rex ls
-        \\  rex spawn [--cols N] [--rows N] [-- cmd...]
-        \\  rex split <pane> [-- cmd...]
-        \\  rex send <pane> <text>
-        \\  rex capture <pane> [--scrollback] [-n N]
-        \\  rex run [--wait] <pane> <cmd...>
-        \\  rex resize <pane> <cols> <rows>
-        \\  rex close <pane>
-        \\  rex attach <pane>
+        \\nebula — native terminal multiplexer
+        \\  nebula serve [--socket PATH]
+        \\  nebula ls
+        \\  nebula spawn [--cols N] [--rows N] [-- cmd...]
+        \\  nebula split <pane> [-- cmd...]
+        \\  nebula send <pane> <text>
+        \\  nebula capture <pane> [--scrollback] [-n N]
+        \\  nebula run [--wait] <pane> <cmd...>
+        \\  nebula resize <pane> <cols> <rows>
+        \\  nebula close <pane>
+        \\  nebula attach <pane>
+        \\
+        \\The legacy cipher-rex protocol and CIPHER_REX_SOCK are preserved for
+        \\compatibility. Nebula is the product name; Rex is an external competitor.
         \\
     ;
-    _ = std.c.write(2, msg.ptr, msg.len);
+    _ = std.c.write(1, msg.ptr, msg.len);
+}
+
+fn usageError(message: []const u8) u8 {
+    _ = std.c.write(2, message.ptr, message.len);
+    _ = std.c.write(2, "\n", 1);
+    return 2;
+}
+
+fn isHelpFlag(arg: []const u8) bool {
+    return std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "help");
+}
+
+fn isVersionFlag(arg: []const u8) bool {
+    return std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-V");
 }
 
 pub fn main(init: std.process.Init.Minimal) !void {
@@ -209,11 +226,27 @@ pub fn main(init: std.process.Init.Minimal) !void {
     for (init.args.vector) |a| try arg_list.append(allocator, std.mem.span(a));
     const args = arg_list.items;
 
-    if (args.len < 2) {
+    if (args.len == 1 or (args.len == 2 and isHelpFlag(args[1]))) {
         usage();
-        return error.Usage;
+        return;
+    }
+    if (args.len == 2 and isVersionFlag(args[1])) {
+        _ = std.c.write(1, "nebula 0.1.0\n", 13);
+        return;
+    }
+    if (args.len < 2) {
+        _ = usageError("nebula: a command is required");
+        return;
     }
     const cmd = args[1];
+    if (isHelpFlag(cmd)) {
+        usage();
+        return;
+    }
+    if (isVersionFlag(cmd)) {
+        _ = std.c.write(1, "nebula 0.1.0\n", 13);
+        return;
+    }
     // Socket path comes from the shared contract module, so the engine and
     // the terminal cannot disagree about where the control socket lives.
     var socket_buf: [256]u8 = undefined;
@@ -232,7 +265,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
     if (std.mem.eql(u8, cmd, "serve")) {
         var srv = try server_mod.Server.init(allocator, sock);
         defer srv.deinit();
-        std.debug.print("rex: serving on {s}\n", .{sock});
+        std.debug.print("nebula: serving on {s}\n", .{sock});
         try srv.run();
         return;
     }
@@ -454,6 +487,5 @@ pub fn main(init: std.process.Init.Minimal) !void {
         return;
     }
 
-    usage();
-    return error.Usage;
+    std.process.exit(usageError("nebula: unknown command"));
 }
