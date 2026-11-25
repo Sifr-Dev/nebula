@@ -41,7 +41,22 @@ pub fn build(b: *std.Build) void {
         .root_module = mux,
     });
     const run_unit = b.addRunArtifact(unit);
-    b.step("test", "Run protocol tests").dependOn(&run_unit.step);
+    const test_step = b.step("test", "Run protocol and CLI tests");
+    test_step.dependOn(&run_unit.step);
+
+    const cli_options = b.addOptions();
+    cli_options.addOptionPath("nebula_exe", exe.getEmittedBin());
+    const cli_mod = b.createModule(.{
+        .root_source_file = b.path("tests/cli_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    cli_mod.link_libc = true;
+    cli_mod.addImport("build_options", cli_options.createModule());
+    const cli_tests = b.addTest(.{ .name = "nebula-cli-tests", .root_module = cli_mod });
+    cli_tests.step.dependOn(&exe.step);
+    const run_cli = b.addRunArtifact(cli_tests);
+    test_step.dependOn(&run_cli.step);
 
     const e2e_options = b.addOptions();
     e2e_options.addOptionPath("rex_exe", exe.getEmittedBin());
