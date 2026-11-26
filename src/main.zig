@@ -15,6 +15,7 @@
 const std = @import("std");
 const term = @import("term");
 const mux = @import("mux");
+const socket_lifecycle = @import("socket_lifecycle");
 const json = term.json;
 const server_mod = term.server;
 const pty_mod = term.pty;
@@ -220,6 +221,41 @@ fn isVersionFlag(arg: []const u8) bool {
     return std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-V");
 }
 
+/// Apply [`socket_lifecycle.decide`] to the live filesystem and either prepare
+/// the path for binding or exit with a documented code and diagnostic.
+///
+/// Split out of `main` so the start-up policy is readable in one place, and so
+/// the same check can run both before and after taking the lifetime lease.
+/// This never returns on a refusal: it exits the process, so a caller cannot
+/// accidentally continue past an unsafe path.
+fn bindOrExit(sock: []const u8) void {
+    const observed = socket_lifecycle.probe(sock);
+    switch (socket_lifecycle.decide(observed.kind, observed.listening)) {
+        .start => return,
+        .reclaim => {
+            socket_lifecycle.reclaim(sock) catch {
+                std.debug.print("nebula: cannot reclaim stale socket {s}\n", .{sock});
+                std.process.exit(socket_lifecycle.exit_unsafe_path);
+            };
+            return;
+        },
+        .refuse_live => {
+            std.debug.print(
+                "nebula: refusing to hijack the live engine already serving on {s}\n",
+                .{sock},
+            );
+            std.process.exit(socket_lifecycle.exit_address_in_use);
+        },
+        .refuse_non_socket => {
+            std.debug.print(
+                "nebula: refusing to use {s}: it exists and is not a socket\n",
+                .{sock},
+            );
+            std.process.exit(socket_lifecycle.exit_unsafe_path);
+        },
+    }
+}
+
 pub fn main(init: std.process.Init.Minimal) !void {
     const allocator = std.heap.page_allocator;
     // args: []const [*:0]const u8 -> [][]const u8
@@ -265,8 +301,56 @@ pub fn main(init: std.process.Init.Minimal) !void {
     const sock: []const u8 = sock_override orelse socket_path;
 
     if (std.mem.eql(u8, cmd, "serve")) {
+        // Start-up is a product decision, not a blind unlink: refuse to steal a
+        // live engine's socket, refuse to delete a path that is not a socket,
+        // and reclaim only a socket that provably has no listener behind it.
+        if (sock.len >= socket_lifecycle.max_socket_path) {
+            std.debug.print("nebula: socket path is too long for a unix socket: {s}\n", .{sock});
+            std.process.exit(socket_lifecycle.exit_unsafe_path);
+        }
+
+        // Refuse on the first observation, before creating a lock file, so a
+        // rejected start never litters the directory the user pointed at.
+        bindOrExit(sock);
+
+        // Only now create the lifetime lease. It closes the race between two
+        // engines that observed the same path at the same instant.
+        var lease = socket_lifecycle.Lock.acquire(sock) catch |e| {
+            switch (e) {
+                error.AlreadyServing => {
+                    std.debug.print("nebula: another engine is already serving on {s}\n", .{sock});
+                    std.process.exit(socket_lifecycle.exit_address_in_use);
+                },
+                error.DirectoryMissing => {
+                    std.debug.print("nebula: socket directory does not exist for {s}\n", .{sock});
+                    std.process.exit(socket_lifecycle.exit_unsafe_path);
+                },
+                error.PermissionDenied => {
+                    std.debug.print("nebula: no permission to lock {s}.lock\n", .{sock});
+                    std.process.exit(socket_lifecycle.exit_lock_failed);
+                },
+                else => {
+                    std.debug.print("nebula: cannot lock {s}.lock\n", .{sock});
+                    std.process.exit(socket_lifecycle.exit_lock_failed);
+                },
+            }
+        };
+        // Re-observe under the lease: an engine may have bound between the
+        // first probe and the lock. Reclaim or refuse with the fresh facts.
+        bindOrExit(sock);
+
+        // The signal handler must target a value with a stable address for the
+        // whole serving lifetime. `srv` is declared before any handler is
+        // installed and is not moved afterwards, so its `running` field is the
+        // one the handler flips; `srv.run()` re-reads it every poll iteration.
         var srv = try server_mod.Server.init(allocator, sock);
-        defer srv.deinit();
+        defer {
+            srv.deinit();
+            // Socket is closed and unlinked by now, so releasing the lease
+            // cannot admit a successor that binds underneath this engine.
+            lease.release();
+        }
+        socket_lifecycle.installShutdownHandlers(&srv.running);
         std.debug.print("nebula: serving on {s}\n", .{sock});
         try srv.run();
         return;

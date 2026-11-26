@@ -33,3 +33,27 @@ test "unknown commands have a concise diagnostic" {
     try std.testing.expectEqual(@as(u8, 2), result.term.exited);
     try std.testing.expectEqualStrings("nebula: unknown command\n", result.stderr);
 }
+
+test "serve refuses to destroy a non-socket path and says why" {
+    var tmp_buf: [96]u8 = undefined;
+    const dir = try std.fmt.bufPrint(&tmp_buf, "/tmp/nebula-cli-{d}", .{std.os.linux.getpid()});
+    std.Io.Dir.createDirAbsolute(std.testing.io, dir, .default_dir) catch |e| switch (e) {
+        error.PathAlreadyExists => {},
+        else => return e,
+    };
+    defer std.Io.Dir.deleteTree(std.Io.Dir.cwd(), std.testing.io, dir) catch {};
+
+    var path_buf: [128]u8 = undefined;
+    const path = try std.fmt.bufPrint(&path_buf, "{s}/not-a-socket.txt", .{dir});
+    const f = try std.Io.Dir.createFileAbsolute(std.testing.io, path, .{});
+    try f.writeStreamingAll(std.testing.io, "keep me");
+    f.close(std.testing.io);
+
+    const result = try run(std.testing.allocator, &.{ "serve", "--socket", path });
+    defer std.testing.allocator.free(result.stdout);
+    defer std.testing.allocator.free(result.stderr);
+    try std.testing.expectEqual(@as(u8, 3), result.term.exited);
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "not a socket") != null);
+    // The diagnostic is one line, not a stack trace.
+    try std.testing.expect(std.mem.indexOf(u8, result.stderr, "panic") == null);
+}
