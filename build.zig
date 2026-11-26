@@ -21,6 +21,13 @@ pub fn build(b: *std.Build) void {
     mux.link_libc = true;
     mux.addImport("term", term);
 
+    const socket_lifecycle = b.createModule(.{
+        .root_source_file = b.path("src/lifecycle/socket.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    socket_lifecycle.link_libc = true;
+
     const app = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -29,6 +36,7 @@ pub fn build(b: *std.Build) void {
     app.link_libc = true;
     app.addImport("term", term);
     app.addImport("mux", mux);
+    app.addImport("socket_lifecycle", socket_lifecycle);
     const exe = b.addExecutable(.{ .name = "nebula", .root_module = app });
     b.installArtifact(exe);
 
@@ -45,8 +53,14 @@ pub fn build(b: *std.Build) void {
         .root_module = mux,
     });
     const run_unit = b.addRunArtifact(unit);
-    const test_step = b.step("test", "Run protocol and CLI tests");
+    const lifecycle_unit = b.addTest(.{
+        .name = "nebula-socket-lifecycle-tests",
+        .root_module = socket_lifecycle,
+    });
+    const run_lifecycle_unit = b.addRunArtifact(lifecycle_unit);
+    const test_step = b.step("test", "Run protocol, socket lifecycle and CLI tests");
     test_step.dependOn(&run_unit.step);
+    test_step.dependOn(&run_lifecycle_unit.step);
 
     const cli_options = b.addOptions();
     cli_options.addOptionPath("nebula_exe", exe.getEmittedBin());
@@ -82,4 +96,27 @@ pub fn build(b: *std.Build) void {
     e2e.step.dependOn(&exe.step);
     const run_e2e = b.addRunArtifact(e2e);
     b.step("test-e2e", "Run real multiplexer lifecycle tests").dependOn(&run_e2e.step);
+
+    // Socket lifecycle: drives the real binary's start-up refusal, reclaim and
+    // SIGTERM shutdown paths over real Unix sockets.
+    const lifecycle_options = b.addOptions();
+    lifecycle_options.addOptionPath("nebula_exe", exe.getEmittedBin());
+    const lifecycle_mod = b.createModule(.{
+        .root_source_file = b.path("tests/lifecycle_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    lifecycle_mod.link_libc = true;
+    lifecycle_mod.addImport("build_options", lifecycle_options.createModule());
+    lifecycle_mod.addImport("socket_lifecycle", socket_lifecycle);
+    const lifecycle_tests = b.addTest(.{
+        .name = "nebula-socket-lifecycle-e2e",
+        .root_module = lifecycle_mod,
+    });
+    lifecycle_tests.step.dependOn(&exe.step);
+    const run_lifecycle_tests = b.addRunArtifact(lifecycle_tests);
+    b.step(
+        "test-lifecycle",
+        "Run real socket lifecycle tests (refusal, reclaim, clean shutdown)",
+    ).dependOn(&run_lifecycle_tests.step);
 }
