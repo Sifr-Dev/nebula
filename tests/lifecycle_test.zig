@@ -185,7 +185,53 @@ test "SIGTERM shuts down cleanly and removes the socket" {
     std.debug.print("NEBULA_LIFECYCLE_SIGTERM_CLEAN\n", .{});
 }
 
+test "auto-spawned panes inherit the caller's shell environment" {
+    var dir_buf: [96]u8 = undefined;
+    const dir = try makeDir(&dir_buf, "environment");
+    defer removeDir(dir);
+    var sock_buf: [128]u8 = undefined;
+    const sock = try std.fmt.bufPrint(&sock_buf, "{s}/ctl.sock", .{dir});
+    var env = std.process.Environ.Map.init(testing.allocator);
+    defer env.deinit();
+    try env.put("PATH", "/usr/bin:/bin");
+    try env.put("HOME", "/tmp/nebula-environment-home");
+    try env.put("NEBULA_TEST_SENTINEL", "preserved");
+    try env.put("CIPHER_REX_SOCK", sock);
+
+    const spawned = try std.process.run(testing.allocator, io, .{
+        .argv = &.{ build_options.nebula_exe, "spawn", "--", "/bin/sh" },
+        .environ_map = &env,
+    });
+    defer testing.allocator.free(spawned.stdout);
+    defer testing.allocator.free(spawned.stderr);
+    try testing.expectEqual(.exited, std.meta.activeTag(spawned.term));
+    try testing.expectEqual(@as(u8, 0), spawned.term.exited);
+
+    const command = "printf 'PANE_HOME=%s PANE_SENTINEL=%s\\n' \"$HOME\" \"$NEBULA_TEST_SENTINEL\"\n";
+    const res = try std.process.run(testing.allocator, io, .{
+        .argv = &.{ build_options.nebula_exe, "run", "--wait", "1", command },
+        .environ_map = &env,
+    });
+    defer testing.allocator.free(res.stdout);
+    defer testing.allocator.free(res.stderr);
+    try testing.expectEqual(.exited, std.meta.activeTag(res.term));
+    try testing.expectEqual(@as(u8, 0), res.term.exited);
+    try testing.expect(std.mem.indexOf(u8, res.stdout, "PANE_HOME=/tmp/nebula-environment-home PANE_SENTINEL=preserved") != null);
+
+    const pid = try std.process.run(testing.allocator, io, .{
+        .argv = &.{ "/usr/bin/lsof", "-t", sock },
+        .environ_map = &env,
+    });
+    defer testing.allocator.free(pid.stdout);
+    defer testing.allocator.free(pid.stderr);
+    const engine_pid = try std.fmt.parseInt(std.posix.pid_t, std.mem.trim(u8, pid.stdout, " \n"), 10);
+    try std.posix.kill(engine_pid, .TERM);
+    try waitAbsent(sock, start_budget_ns);
+    std.debug.print("NEBULA_ENVIRONMENT_PRESERVED\n", .{});
+}
+
 test "a stale socket left by SIGKILL is reclaimed by the next serve" {
+
     var dir_buf: [96]u8 = undefined;
     const dir = try makeDir(&dir_buf, "stale");
     defer removeDir(dir);

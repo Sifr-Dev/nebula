@@ -99,8 +99,9 @@ fn ensureServer(path: []const u8) !void {
         const p2 = z(alloc, "--socket") catch childFail();
         const p3 = z(alloc, path) catch childFail();
         var av = [_]?[*:0]const u8{ p0, p1, p2, p3, null };
-        var envp = [_]?[*:0]const u8{null};
-        _ = std.os.linux.execve(p0, @ptrCast(av[0..].ptr), @ptrCast(envp[0..].ptr));
+        // Auto-spawned servers must retain the user's environment: HOME,
+        // PATH, locale and XDG_RUNTIME_DIR are needed by programs in panes.
+        _ = std.os.linux.execve(p0, @ptrCast(av[0..].ptr), @ptrCast(std.c.environ));
         childFail();
     }
     // parent: wait for the socket (up to 3 s)
