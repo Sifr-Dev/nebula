@@ -187,6 +187,8 @@ fn usage() void {
     const msg =
         \\nebula — native terminal multiplexer
         \\  nebula serve [--socket PATH]
+        \\  nebula hello
+        \\  nebula detach
         \\  nebula ls
         \\  nebula spawn [--cols N] [--rows N] [-- cmd...]
         \\  nebula split <pane> [-- cmd...]
@@ -267,6 +269,20 @@ pub fn main(init: std.process.Init.Minimal) !void {
         defer srv.deinit();
         std.debug.print("nebula: serving on {s}\n", .{sock});
         try srv.run();
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "hello")) {
+        const line = try rpcRequest(allocator, sock, .hello);
+        defer allocator.free(line);
+        try printJson(allocator, line);
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "detach")) {
+        const line = try rpcRequest(allocator, sock, .detach);
+        defer allocator.free(line);
+        try printJson(allocator, line);
         return;
     }
 

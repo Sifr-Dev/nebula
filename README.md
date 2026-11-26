@@ -2,6 +2,8 @@
 
 Nebula is a native terminal multiplexer built with Cipher. It owns PTYs, serves a JSON-lines control protocol over a private Unix socket, and supports pane creation, splitting, execution, capture, resizing, attachment, and closing.
 
+The CLI also exposes `hello` for the protocol handshake and `detach` for cleanly ending a client attachment session. These use the existing version-1 wire contract; the legacy `cipher-rex` identity remains unchanged.
+
 **Nebula is the product name.** Rex is an external competitor to evaluate, not a SIFR project or internal codename. The current implementation retains `cipher-rex` in its legacy protocol identity and `CIPHER_REX_SOCK` for compatibility; changing those requires a versioned migration, not a text replacement.
 
 ## Requirements
@@ -30,4 +32,4 @@ The protocol tests cover request encoding and reply parsing. The end-to-end test
 
 This is an independently maintained application repository with its own CI and release lifecycle. It is not a claim that every terminal user workflow is complete. The server implementation currently comes from Cipher's `term.server` module; a future product decision may move it into Nebula while preserving the tested protocol contract.
 
-The CLI implementation in `src/main.zig` uses the legacy `rex` entrypoint internally but produces a `nebula` executable. A deliberate CLI compatibility and migration pass is still required before describing every command as stable Nebula product behavior.
+The CLI implementation in `src/main.zig` uses the legacy `rex` entrypoint internally but produces a `nebula` executable. A deliberate CLI compatibility and migration pass is still required before describing every command as stable Nebula product behavior. `hello` and `detach` are covered by the same real-engine end-to-end test as pane lifecycle operations.

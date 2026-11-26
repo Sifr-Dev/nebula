@@ -151,7 +151,20 @@ test "mux engine: spawn, run, capture, resize, split, close over a private socke
         sleepMs(20);
     }
 
-    // 1. Empty pane list on a fresh engine.
+    // 1. The protocol handshake is available through the product CLI.
+    {
+        var c = try cli(sock_path, &.{"hello"});
+        defer c.deinit();
+        try expectOk(&c, "hello");
+        var reply = try parseReply(alloc, c.stdout);
+        defer reply.deinit();
+        try testing.expect(reply.ok());
+        try testing.expectEqual(@as(f64, 1), reply.value.get("version").?.numOf().?);
+        try testing.expectEqualStrings("cipher-rex", reply.value.get("server").?.strOf().?);
+        std.debug.print("MUX_E2E_HELLO_OK\n", .{});
+    }
+
+    // 2. Empty pane list on a fresh engine.
     {
         var c = try cli(sock_path, &.{"ls"});
         defer c.deinit();
@@ -266,5 +279,16 @@ test "mux engine: spawn, run, capture, resize, split, close over a private socke
         try testing.expect(reply.ok());
         try testing.expect(reply.firstAlivePane() == null);
         std.debug.print("MUX_E2E_CLOSE_OK engine alive, no panes\n", .{});
+    }
+
+    // 9. Detach acknowledges without closing the engine or its panes.
+    {
+        var c = try cli(sock_path, &.{"detach"});
+        defer c.deinit();
+        try expectOk(&c, "detach");
+        var reply = try parseReply(alloc, c.stdout);
+        defer reply.deinit();
+        try testing.expect(reply.ok());
+        std.debug.print("MUX_E2E_DETACH_OK\n", .{});
     }
 }
