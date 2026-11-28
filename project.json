@@ -1,0 +1,10 @@
+{
+  "name": "nebula",
+  "description": "Multiplexer engine: spawn/split/capture sessions over a unix socket",
+  "stack": [
+    "zig"
+  ],
+  "status": "active",
+  "primary_language": "Zig",
+  "cipher_version": "pinned via -Dcipher-root"
+}
