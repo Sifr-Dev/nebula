@@ -2,6 +2,8 @@
 
 Nebula is a native terminal multiplexer built with Cipher. It owns PTYs, serves a JSON-lines control protocol over a private Unix socket, and supports pane creation, splitting, execution, capture, resizing, attachment, and closing.
 
+**Pinned Cipher:** `fca41d8` (CI checks out this exact commit).
+
 The CLI also exposes `hello` for the protocol handshake and `detach` for cleanly ending a client attachment session. These use the existing version-1 wire contract; the legacy `cipher-rex` identity remains unchanged.
 
 **Nebula is the product name.** Rex is an external competitor to evaluate, not a SIFR project or internal codename. The current implementation retains `cipher-rex` in its legacy protocol identity and `CIPHER_REX_SOCK` for compatibility; changing those requires a versioned migration, not a text replacement.
